@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+
+body {
+    @apply bg-primary text-secondary font-inter font-black;
+}
+
+button:focus {
+    outline: none;
+}
+
+.no-copy {
+    user-select: none;    /* Стандартное свойство */
+    -webkit-user-select: none; /* Для Safari и старых браузеров */
+    -moz-user-select: none;    /* Для Firefox */
+    -ms-user-select: none;
+}
+
+.rotate-icon {
+    display: inline-block; /* Чтобы transform работал */
+    transition: transform 0.3s ease; /* Плавная анимация */
+}
+
+button:hover .rotate-icon {
+    transform: rotate(45deg); /* Поворот на 45° при наведении */
+}
+
+.truncate-middle {
+    direction: rtl;         /* Справа налево (меняет направление текста) */
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    unicode-bidi: plaintext; /* Корректно работает с RTL */
+}

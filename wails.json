@@ -1,0 +1,15 @@
+{
+  "browser": "none",
+  "autobrowser": false,
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "console-art-gen2",
+  "outputfilename": "console-art-gen2",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "frontend:dev:browser": "none",
+  "author": {
+    "name": "t.me/gmnovatoday"
+  }
+}
