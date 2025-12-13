@@ -5,7 +5,7 @@
 
 
 body {
-    @apply bg-primary text-secondary font-inter font-black;
+    @apply bg-primary text-secondary font-inter font-bold;
 }
 
 button:focus {
@@ -25,7 +25,7 @@ button:focus {
 }
 
 button:hover .rotate-icon {
-    transform: rotate(45deg); /* Поворот на 45° при наведении */
+    transform: rotate(180deg); /* Поворот на 45° при наведении */
 }
 
 .truncate-middle {
@@ -35,3 +35,16 @@ button:hover .rotate-icon {
     overflow: hidden;
     unicode-bidi: plaintext; /* Корректно работает с RTL */
 }
+
+
+.scroll-thin {
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: #222 transparent;
+}
+
+.input-placeholder-dark::placeholder {
+    color: #333;
+    opacity: 1;
+}
+

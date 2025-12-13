@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 
 	"github.com/73ddy-io/logger"
 )
@@ -9,7 +11,6 @@ import (
 type App struct {
 	ctx         context.Context
 	windowTitle string
-	// другие поля
 }
 
 func NewApp(windowTitle string) *App {
@@ -22,11 +23,22 @@ func NewApp(windowTitle string) *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	logger.Info("Creating App instance: Success")
-	// Инициализация приложения
 }
 
-func (a *App) domReady(ctx context.Context) {}
-
+// название окна
 func (a *App) GetTitle() string {
 	return a.windowTitle
+}
+
+// поиск и чтение assets/questions.json из embed.FS
+func (a *App) GetQuestions() ([]string, error) {
+	data, err := os.ReadFile("assets/questions.json")
+	if err != nil {
+		return []string{}, err
+	}
+	var qs []string
+	if err := json.Unmarshal(data, &qs); err != nil {
+		return []string{}, err
+	}
+	return qs, nil
 }

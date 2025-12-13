@@ -35,17 +35,17 @@ export default function TitleBar(){
     return (
         <div className="flex justify-center items-center bg-primary text-secondary relative border-b-[1px] border-[#242426] no-copy"
              style={{ '--wails-draggable': 'drag' } as React.CSSProperties}>
-            <span className="absolute left-1/2 transform -translate-x-1/2 truncate font-unbounded font-bold text-[12px]">{title}</span>
+            <span className="absolute left-1/2 transform -translate-x-1/2 truncate font-unbounded font-bold text-[12px] text-[#afafaf]">{title}</span>
             <div className="flex ml-auto gap-1">
                 <button
                     onClick={WindowMinimise}
-                    className="h-[33px] w-[33px] justify-center text-[#9f9f9f] hover:text-secondary"
+                    className="h-[33px] w-[33px] justify-center text-[#9f9f9f] hover:text-secondary hover:bg-[#121212]"
                 >
                     –
                 </button>
                 <button
                     onClick={handleMaximize}
-                    className="h-[33px] w-[33px] justify-center text-[#9f9f9f] hover:text-secondary"
+                    className="h-[33px] w-[33px] justify-center text-[#9f9f9f] hover:text-secondary hover:bg-[#121212]"
                 >
                     <span className="rotate-icon">◻</span>
                 </button>
