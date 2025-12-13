@@ -556,7 +556,7 @@ export default function MainContent() {
             {/* Правая часть: чат */}
             <div className='flex-1 flex flex-col border border-[#242426] rounded-lg overflow-hidden'>
                 <div className='px-3 py-2 border-b border-[#242426] flex items-center justify-between text-sm'>
-                    <span>Chatting</span>
+                    <span className='font-unbounded'>Chatting</span>
                     <div className='flex items-center gap-2'>
                         <span
                             className={
@@ -567,7 +567,7 @@ export default function MainContent() {
                         </span>
                         <button
                             onClick={handleReconnect}
-                            className="h-[33px] w-[33px] justify-center text-[#9f9f9f] rounded-md hover:text-secondary hover:bg-[#121212]"
+                            className="h-[33px] w-[33px] justify-center text-[#9f9f9f] rounded-md hover:text-secondary hover:bg-[#222]"
                         >
                             <span className="rotate-icon text-xl">↻</span>
                         </button>
@@ -613,7 +613,7 @@ export default function MainContent() {
                     />
                     <button
                         type='submit'
-                        className='px-4 py-2 text-sm rounded-md hover:bg-[#121212]'
+                        className='px-4 py-2 text-sm rounded-md hover:bg-[#222]'
                         disabled={!connected || !input.trim()}
                     >
                         Send
