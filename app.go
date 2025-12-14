@@ -42,3 +42,21 @@ func (a *App) GetQuestions() ([]string, error) {
 	}
 	return qs, nil
 }
+
+type AgentConfig struct {
+	ID    string `json:"id"`
+	Token string `json:"token"`
+}
+
+// чтение assets/agents.json
+func (a *App) GetAgents() ([]AgentConfig, error) {
+	data, err := os.ReadFile("assets/agents.json")
+	if err != nil {
+		return []AgentConfig{}, err
+	}
+	var agents []AgentConfig
+	if err := json.Unmarshal(data, &agents); err != nil {
+		return []AgentConfig{}, err
+	}
+	return agents, nil
+}
