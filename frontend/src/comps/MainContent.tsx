@@ -595,8 +595,7 @@ export default function MainContent() {
                     ))}
                     {messages.length === 0 && (
                         <div className='text-xs text-neutral-500'>
-                            Напишите сообщение, кликните по центральному вопросу
-                            или нажмите Start для автоотправки.
+                            use how u like.
                         </div>
                     )}
                 </div>
