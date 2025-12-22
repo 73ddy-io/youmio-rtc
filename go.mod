@@ -5,7 +5,7 @@ go 1.22.0
 toolchain go1.24.0
 
 require (
-	github.com/73ddy-io/logger v0.1.0
+	github.com/73ddy-io/logger v0.1.3
 	github.com/wailsapp/wails/v2 v2.10.1
 )
 

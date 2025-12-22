@@ -1,0 +1,5 @@
+2025-12-22 23:34:42 [INFO] (6368)app.go:28 NewApp - Creating App instance: Processing
+2025-12-22 23:34:47 [INFO] (32936)app.go:28 NewApp - Creating App instance: Processing
+2025-12-22 23:34:49 [INFO] (19564)app.go:28 NewApp - Creating App instance: Processing
+2025-12-22 23:34:50 [INFO] (19564)app.go:48 startup - Creating App instance: Success
+2025-12-22 23:37:39 [INFO] (27656)app.go:28 NewApp - Creating App instance: Processing

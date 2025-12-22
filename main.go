@@ -9,7 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
-//go:embed assets/*
+//go:embed frontend/dist/*
 var assets embed.FS
 
 var icon []byte
@@ -36,6 +36,8 @@ func main() {
 	})
 
 	if err != nil {
-		fmt.Println("Error:", err.Error())
+		fmt.Println("Wails error:", err.Error())
+		fmt.Println("Press Enter to exit...")
+		fmt.Scanln() // ждём ввод, чтобы консоль не закрылась
 	}
 }

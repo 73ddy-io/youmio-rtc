@@ -6,3 +6,4 @@ frontend/dist
 .vscode/*
 /build
 *.sum
+savemaincontent.txt
