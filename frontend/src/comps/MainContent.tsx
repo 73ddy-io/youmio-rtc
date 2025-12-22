@@ -1,20 +1,29 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as AppAPI from '../../wailsjs/go/main/App';
 
-// Типы
+/**
+ * Application configuration loaded from backend.
+ */
 type AppConfig = {
     token: string;
     agentId: string;
 }
 
+/** WebSocket base URL for chat API. */
 const WS_BASE_URL = 'wss://api.youmio.ai/api/chat';
 
+/**
+ * Chat message displayed in the conversation.
+ */
 type ChatMessage = {
     id: string;
     text: string;
     sender: 'User' | 'Agent';
 };
 
+/**
+ * Single incoming chat message from WebSocket.
+ */
 type IncomingChatMsg = {
     type: 'ChatMsg';
     id: string;
@@ -22,28 +31,40 @@ type IncomingChatMsg = {
     sender: 'User' | 'Agent';
 };
 
+/**
+ * Batch of incoming chat messages from WebSocket.
+ */
 type IncomingChatMsgList = {
     type: 'ChatMsgList';
     messages: IncomingChatMsg[];
 };
 
+/**
+ * Buffer state for streaming agent responses.
+ */
 type AgentBufferItem = {
     text: string;
     shownLength: number;
     timerId: number | null;
 };
 
+/** Row height in pixels for question slider. */
 const ROW_HEIGHT = 50;
+/** Number of visible rows in question slider. */
 const VISIBLE_ROWS = 3;
 
-// --- КОНСТАНТЫ СКОРОСТИ ---
+/** Animation constants for auto-send timing. */
 const INTERVAL_FAST_MS = 2500;
 const INTERVAL_SLOW_MS = 8000;
 const STREAM_SILENCE_MS = 3500;
 
+/**
+ * Generates a random ID string for messages.
+ * @param len Length of the ID (default: 20)
+ * @returns Random alphanumeric string
+ */
 function genId(len = 20): string {
-    const chars =
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let res = '';
     for (let i = 0; i < len; i++) {
         res += chars[Math.floor(Math.random() * chars.length)];
@@ -51,8 +72,27 @@ function genId(len = 20): string {
     return res;
 }
 
+/**
+ * Main chat interface component with question slider and WebSocket messaging.
+ * 
+ * Features:
+ * - Real-time chat with streaming agent responses
+ * - Question slider with auto-send functionality
+ * - Speed toggle (Fast 2.5s / Slow 8s intervals)
+ * - WebSocket connection with reconnection logic
+ * - Backend config loading (token/agentId)
+ * 
+ * @example
+ * ```
+ * import MainContent from './MainContent';
+ * 
+ * function App() {
+ *   return <MainContent />;
+ * }
+ * ```
+ */
 export default function MainContent() {
-    // --- State ---
+    // --- Core State ---
     const [config, setConfig] = useState<AppConfig | null>(null);
     const [ws, setWs] = useState<WebSocket | null>(null);
     const [connected, setConnected] = useState(false);
@@ -61,24 +101,27 @@ export default function MainContent() {
     const [questions, setQuestions] = useState<string[]>([]);
     const [questionsLoaded, setQuestionsLoaded] = useState(false);
 
-    // Auto-send State
+    // --- Auto-send State ---
     const [autoRunning, setAutoRunning] = useState(false);
-    const [sendSpeed, setSendSpeed] = useState<'fast' | 'slow'>('fast'); // Новый стейт для скорости
+    const [sendSpeed, setSendSpeed] = useState<'fast' | 'slow'>('fast');
     const autoTimerRef = useRef<number | null>(null);
     const autoIndexRef = useRef(0);
 
-    // Slider State
+    // --- Slider State ---
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isSliding, setIsSliding] = useState(false);
     const sliderRef = useRef<HTMLDivElement | null>(null);
 
-    // Refs
+    // --- Refs ---
     const messagesContainerRef = useRef<HTMLDivElement | null>(null);
     const agentBuffersRef = useRef<Map<string, AgentBufferItem>>(new Map());
     const pendingOpenRef = useRef<Promise<WebSocket> | null>(null);
 
-    // --- Init & Config ---
+    // --- Initialization ---
 
+    /**
+     * Loads application configuration from backend.
+     */
     const loadConfig = async () => {
         try {
             const cfg = (await (AppAPI as any).GetConfig()) as AppConfig;
@@ -91,6 +134,9 @@ export default function MainContent() {
         }
     };
 
+    /**
+     * Loads questions list from backend.
+     */
     const loadQuestions = async () => {
         try {
             const qs = (await (AppAPI as any).GetQuestions()) as string[];
@@ -107,27 +153,33 @@ export default function MainContent() {
         }
     };
 
+    // Load config and questions on mount
     useEffect(() => {
         loadConfig();
         loadQuestions();
     }, []);
 
+    // Auto-scroll to latest message
     useEffect(() => {
         const el = messagesContainerRef.current;
         if (!el) return;
         el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     }, [messages]);
 
+    // Recreate WebSocket when config changes
     useEffect(() => {
         if (config) {
-             if (ws) ws.close();
-             createSocket();
+            if (ws) ws.close();
+            createSocket();
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [config]);
 
-    // --- Buffer Logic ---
+    // --- Streaming Buffer Logic ---
 
+    /**
+     * Flushes buffered agent message to chat display.
+     */
     const flushAgentById = (id: string) => {
         const map = agentBuffersRef.current;
         const item = map.get(id);
@@ -139,6 +191,9 @@ export default function MainContent() {
         setMessages((prev) => [...prev, { id, text: finalText, sender: 'Agent' }]);
     };
 
+    /**
+     * Schedules agent buffer flush after silence timeout.
+     */
     const scheduleFlushAgentById = (id: string) => {
         const map = agentBuffersRef.current;
         const item = map.get(id);
@@ -151,6 +206,9 @@ export default function MainContent() {
 
     // --- WebSocket Logic ---
 
+    /**
+     * Attaches event handlers to WebSocket instance.
+     */
     const attachSocketHandlers = (socket: WebSocket) => {
         socket.onopen = () => setConnected(true);
         socket.onerror = () => setConnected(false);
@@ -163,6 +221,9 @@ export default function MainContent() {
         };
     };
 
+    /**
+     * Creates new WebSocket connection.
+     */
     const createSocket = () => {
         if (!config) return null;
         const fullUrl = `${WS_BASE_URL}?agentId=${config.agentId}&token=${config.token}`;
@@ -172,6 +233,9 @@ export default function MainContent() {
         return socket;
     };
 
+    /**
+     * Ensures WebSocket is open, creates new connection if needed.
+     */
     const ensureSocketOpen = async (): Promise<WebSocket | null> => {
         if (!config) return null;
         if (ws && ws.readyState === WebSocket.OPEN) return ws;
@@ -206,6 +270,10 @@ export default function MainContent() {
         finally { pendingOpenRef.current = null; }
     };
 
+    /**
+     * Handles incoming agent streaming messages.
+     * Updates buffer and schedules flush on silence.
+     */
     const handleIncomingChatMsg = (msg: IncomingChatMsg) => {
         if (msg.sender !== 'Agent') return;
         const id = msg.id || genId();
@@ -225,6 +293,7 @@ export default function MainContent() {
         scheduleFlushAgentById(id);
     };
 
+    // Cleanup on unmount
     useEffect(() => {
         return () => {
             ws?.close();
@@ -239,11 +308,13 @@ export default function MainContent() {
 
     // --- Button Handlers ---
 
+    /** Reloads questions from backend and stops auto-send. */
     const handleReloadQuestions = async () => {
         stopAutoSend();
         await loadQuestions();
     };
 
+    /** Reconnects WebSocket and clears buffers. */
     const handleReconnect = () => {
         if (!config) return;
         if (ws) {
@@ -258,6 +329,7 @@ export default function MainContent() {
         createSocket();
     };
     
+    /** Reloads config and reconnects. */
     const handleUpdateConfig = async () => {
         stopAutoSend();
         setConnected(false);
@@ -266,8 +338,11 @@ export default function MainContent() {
         if (config) setTimeout(() => handleReconnect(), 100);
     };
 
-    // --- Sending Logic ---
+    // --- Message Sending ---
 
+    /**
+     * Sends message via WebSocket and adds to local chat.
+     */
     const sendMessage = async (text: string) => {
         if (!text.trim()) return;
         const socket = await ensureSocketOpen();
@@ -287,6 +362,7 @@ export default function MainContent() {
         setMessages((prev) => [...prev, { id: msg.id, text: trimmed, sender: 'User' }]);
     };
 
+    /** Handles form submission for manual messages. */
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim()) return;
@@ -295,13 +371,17 @@ export default function MainContent() {
         stopAutoSend();
     };
 
-    // --- Slider & Auto Loop ---
+    // --- Slider & Auto-send Logic ---
 
+    /** Gets question at index or empty string if out of bounds. */
     const getItemOrEmpty = (index: number): string => {
         if (index < 0 || index >= questions.length) return '';
         return questions[index];
     };
 
+    /**
+     * Animates slider to new index with smooth transition.
+     */
     const animateToIndex = (nextIndex: number, cb: () => void) => {
         const track = sliderRef.current;
         if (!track) {
@@ -335,6 +415,7 @@ export default function MainContent() {
         });
     };
 
+    /** Stops auto-send timer and resets state. */
     const stopAutoSend = () => {
         if (autoTimerRef.current !== null) {
             clearInterval(autoTimerRef.current);
@@ -343,6 +424,7 @@ export default function MainContent() {
         setAutoRunning(false);
     };
 
+    /** Sends question at specific index. */
     const sendQuestionByIndex = async (index: number) => {
         if (index < 0 || index >= questions.length) return;
         const q = questions[index];
@@ -350,7 +432,9 @@ export default function MainContent() {
         await sendMessage(q);
     };
 
-    // Функция запуска цикла таймера (вынесена отдельно)
+    /**
+     * Runs auto-send timer loop with specified delay.
+     */
     const runTimerLoop = (delay: number) => {
         if (autoTimerRef.current !== null) clearInterval(autoTimerRef.current);
 
@@ -371,10 +455,12 @@ export default function MainContent() {
         }, delay);
     };
 
+    /**
+     * Starts auto-send loop from current slider position.
+     */
     const startAutoSend = async () => {
         if (!questions.length) return;
         
-        // Если уже запущен, не дублируем, но можем обновить если что-то сбилось
         if (autoRunning && autoTimerRef.current !== null) return;
 
         const socket = await ensureSocketOpen();
@@ -383,24 +469,24 @@ export default function MainContent() {
         setAutoRunning(true);
         autoIndexRef.current = currentIndex;
         
-        // Сразу отправляем первый (текущий) вопрос
         await sendQuestionByIndex(autoIndexRef.current);
 
-        // Определяем задержку на основе текущего режима
         const delay = sendSpeed === 'fast' ? INTERVAL_FAST_MS : INTERVAL_SLOW_MS;
         runTimerLoop(delay);
     };
 
-    // Обработчик смены скорости
+    /**
+     * Toggles auto-send speed and updates running timer.
+     */
     const toggleSpeed = (mode: 'fast' | 'slow') => {
         setSendSpeed(mode);
-        // Если авто-режим активен, перезапускаем таймер с новой скоростью "на лету"
         if (autoRunning) {
             const newDelay = mode === 'fast' ? INTERVAL_FAST_MS : INTERVAL_SLOW_MS;
             runTimerLoop(newDelay);
         }
     };
 
+    /** Loads current question into input field. */
     const handleCenterClick = () => {
         const q = getItemOrEmpty(currentIndex);
         if (!q) return;
@@ -413,7 +499,7 @@ export default function MainContent() {
 
     return (
         <div className="flex-1 p-4 overflow-hidden bg-primary text-afafaf flex gap-4">
-            {/* Левый слайдер вопросов */}
+            {/* Question Slider - Left Panel */}
             <div className="w-[260px] bg-primary flex flex-col items-center justify-center">
                 <div className="relative w-full mb-3">
                     <div
@@ -440,7 +526,7 @@ export default function MainContent() {
                     </div>
                 </div>
 
-                {/* --- SPEED TOGGLE --- */}
+                {/* Speed Toggle Controls */}
                 <div className="w-full flex bg-[#222] rounded-md p-1 mb-2">
                     <button
                         onClick={() => toggleSpeed('fast')}
@@ -449,6 +535,7 @@ export default function MainContent() {
                             ? 'bg-[#444] text-white font-bold shadow-sm' 
                             : 'text-[#666] hover:text-[#999]'
                         }`}
+                        aria-label="Fast mode (2.5s interval)"
                     >
                         Fast (2.5s)
                     </button>
@@ -459,17 +546,20 @@ export default function MainContent() {
                             ? 'bg-[#444] text-white font-bold shadow-sm' 
                             : 'text-[#666] hover:text-[#999]'
                         }`}
+                        aria-label="Slow mode (8s interval)"
                     >
                         Slow (8s)
                     </button>
                 </div>
 
+                {/* Control Buttons */}
                 <div className="flex gap-2 text-xs w-full justify-between">
                     <button
                         type="button"
                         className="flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]"
                         onClick={startAutoSend}
                         disabled={!questionsLoaded || autoRunning}
+                        aria-label="Start auto-send loop"
                     >
                         Start
                     </button>
@@ -478,6 +568,7 @@ export default function MainContent() {
                         className="flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]"
                         onClick={stopAutoSend}
                         disabled={!autoRunning}
+                        aria-label="Stop auto-send loop"
                     >
                         Stop
                     </button>
@@ -485,6 +576,7 @@ export default function MainContent() {
                         type="button"
                         className="flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]"
                         onClick={handleReloadQuestions}
+                        aria-label="Reload questions from backend"
                     >
                         Reload
                     </button>
@@ -497,22 +589,36 @@ export default function MainContent() {
                 )}
             </div>
 
-            {/* Правая часть: чат */}
+            {/* Chat Panel - Right Side */}
             <div className="flex-1 flex flex-col border border-[#242426] rounded-lg overflow-hidden">
+                {/* Chat Header */}
                 <div className="px-3 py-2 border-b border-[#242426] flex items-center justify-between text-sm">
                     <span className="font-unbounded">Chatting</span>
                     <div className="flex items-center gap-3">
-                        <button onClick={handleUpdateConfig} className="px-2 py-1 text-xs border border-[#444] rounded-md hover:bg-[#222] text-[#9f9f9f]" title="Reload config.json & Reconnect">
+                        <button 
+                            onClick={handleUpdateConfig} 
+                            className="px-2 py-1 text-xs border border-[#444] rounded-md hover:bg-[#222] text-[#9f9f9f]" 
+                            title="Reload config.json & Reconnect"
+                            aria-label="Update configuration"
+                        >
                             Update config
                         </button>
                         <div className="h-4 w-[1px] bg-[#333]" />
-                        <span className={connected ? 'text-green-400' : 'text-red-400'}>{connected ? 'online' : 'offline'}</span>
-                        <button onClick={handleReconnect} title="Reconnect Socket" className="h-[28px] w-[28px] flex items-center justify-center text-[#9f9f9f] rounded-md hover:text-secondary hover:bg-[#222]">
-                             <span className="rotate-icon text-xl">↻</span>
+                        <span className={connected ? 'text-green-400' : 'text-red-400'}>
+                            {connected ? 'online' : 'offline'}
+                        </span>
+                        <button 
+                            onClick={handleReconnect} 
+                            title="Reconnect Socket" 
+                            className="h-[28px] w-[28px] flex items-center justify-center text-[#9f9f9f] rounded-md hover:text-secondary hover:bg-[#222]"
+                            aria-label="Reconnect WebSocket"
+                        >
+                            <span className="rotate-icon text-xl">↻</span>
                         </button>
                     </div>
                 </div>
 
+                {/* Messages Container */}
                 <div ref={messagesContainerRef} className="flex-1 overflow-auto p-3 bg-primary space-y-2 text-sm scroll-thin">
                     {messages.map((m) => (
                         <div key={m.id} className={`max-w-[80%] rounded-lg px-3 py-2 ${m.sender === 'User' ? 'ml-auto bg-[#333]' : 'mr-auto bg-[#222222]'}`}>
@@ -520,12 +626,28 @@ export default function MainContent() {
                             <div>{m.text}</div>
                         </div>
                     ))}
-                    {messages.length === 0 && <div className="text-xs text-neutral-500">use how u like.</div>}
+                    {messages.length === 0 && (
+                        <div className="text-xs text-neutral-500">use how u like.</div>
+                    )}
                 </div>
 
+                {/* Input Form */}
                 <form onSubmit={handleSubmit} className="border-t border-primary p-2 flex gap-2">
-                    <input className="flex-1 bg-[#101010] text-sm px-3 py-2 rounded-md outline-none border border-[#222] focus:border-[#333] input-placeholder-dark" placeholder="type here..." value={input} onChange={(e) => setInput(e.target.value)} />
-                    <button type="submit" className="px-4 py-2 text-sm rounded-md hover:bg-[#222]" disabled={!input.trim()}>Send</button>
+                    <input 
+                        className="flex-1 bg-[#101010] text-sm px-3 py-2 rounded-md outline-none border border-[#222] focus:border-[#333] input-placeholder-dark" 
+                        placeholder="type here..." 
+                        value={input} 
+                        onChange={(e) => setInput(e.target.value)}
+                        aria-label="Chat input"
+                    />
+                    <button 
+                        type="submit" 
+                        className="px-4 py-2 text-sm rounded-md hover:bg-[#222]" 
+                        disabled={!input.trim()}
+                        aria-label="Send message"
+                    >
+                        Send
+                    </button>
                 </form>
             </div>
         </div>

@@ -1,50 +1,100 @@
+/*!
+ * Global styles for Wails desktop chat application
+ * 
+ * Customizes Tailwind base, components, and utilities for dark theme
+ * with custom scrollbar, button animations, and text truncation.
+ */
+
+/* Tailwind directives */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-
-
+/**
+ * Base body styling for the entire application.
+ * 
+ * Sets primary dark theme colors, Inter font family, and bold weight.
+ * Applied globally to all pages and components.
+ */
 body {
     @apply bg-primary text-secondary font-inter font-bold;
 }
 
+/**
+ * Removes focus outline from buttons for cleaner desktop appearance.
+ * 
+ * Note: Consider adding custom focus indicators for accessibility.
+ */
 button:focus {
     outline: none;
 }
 
+/**
+ * Disables text selection across interactive elements.
+ * 
+ * Cross-browser support for user-select: none.
+ * Used on title bars, buttons, and draggable areas.
+ */
 .no-copy {
-    user-select: none;    /* Стандартное свойство */
-    -webkit-user-select: none; /* Для Safari и старых браузеров */
-    -moz-user-select: none;    /* Для Firefox */
+    user-select: none;        /* Standard property */
+    -webkit-user-select: none; /* Safari & old browsers */
+    -moz-user-select: none;    /* Firefox */
     -ms-user-select: none;
 }
 
+/**
+ * Base class for icons with rotation animation.
+ * 
+ * Provides smooth 180° rotation on hover for refresh/close icons.
+ */
 .rotate-icon {
-    display: inline-block; /* Чтобы transform работал */
-    transition: transform 0.3s ease; /* Плавная анимация */
+    display: inline-block; /* Required for transform to work */
+    transition: transform 0.3s ease; /* Smooth animation */
 }
 
+/**
+ * Hover effect for icons inside buttons.
+ * 
+ * Rotates icon 180° when parent button is hovered.
+ * Used for refresh (↻) and other animated icons.
+ */
 button:hover .rotate-icon {
-    transform: rotate(180deg); /* Поворот на 45° при наведении */
+    transform: rotate(180deg);
 }
 
+/**
+ * Truncates text with ellipsis in the middle (RTL technique).
+ * 
+ * Shows beginning + end of long text (e.g., "very-long-filename.txt").
+ * Works with mixed LTR/RTL content via unicode-bidi.
+ */
 .truncate-middle {
-    direction: rtl;         /* Справа налево (меняет направление текста) */
+    direction: rtl;           /* Right-to-left direction */
     text-overflow: ellipsis;
     white-space: nowrap;
     overflow: hidden;
-    unicode-bidi: plaintext; /* Корректно работает с RTL */
+    unicode-bidi: plaintext;  /* Correct RTL handling */
 }
 
-
+/**
+ * Custom thin scrollbar styling for Firefox.
+ * 
+ * Creates minimal scrollbars with dark theme colors.
+ * Note: Chrome/Webkit uses separate scrollbar properties.
+ */
 .scroll-thin {
-    /* Firefox */
+    /* Firefox-specific */
     scrollbar-width: thin;
     scrollbar-color: #222 transparent;
 }
 
+/**
+ * Dark theme placeholder styling for input fields.
+ * 
+ * Ensures placeholder text matches dark theme (gray #333).
+ * Maintains full opacity for better visibility.
+ */
 .input-placeholder-dark::placeholder {
     color: #333;
     opacity: 1;
 }
-

@@ -8,3 +8,4 @@ frontend/dist
 *.sum
 savemaincontent.txt
 /log
+assets/config.json
