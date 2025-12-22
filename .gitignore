@@ -7,3 +7,4 @@ frontend/dist
 /build
 *.sum
 savemaincontent.txt
+/log
