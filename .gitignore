@@ -9,3 +9,4 @@ frontend/dist
 savemaincontent.txt
 /log
 assets/config.json
+assets/questions.json

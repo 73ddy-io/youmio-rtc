@@ -1,29 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as AppAPI from '../../wailsjs/go/main/App';
 
-/**
- * Application configuration loaded from backend.
- */
+// Application configuration loaded from backend.
 type AppConfig = {
     token: string;
     agentId: string;
-}
+};
 
-/** WebSocket base URL for chat API. */
+// WebSocket base URL for chat API.
 const WS_BASE_URL = 'wss://api.youmio.ai/api/chat';
 
-/**
- * Chat message displayed in the conversation.
- */
+// Chat message displayed in the conversation.
 type ChatMessage = {
     id: string;
     text: string;
     sender: 'User' | 'Agent';
 };
 
-/**
- * Single incoming chat message from WebSocket.
- */
+// Single incoming chat message from WebSocket.
 type IncomingChatMsg = {
     type: 'ChatMsg';
     id: string;
@@ -31,40 +25,37 @@ type IncomingChatMsg = {
     sender: 'User' | 'Agent';
 };
 
-/**
- * Batch of incoming chat messages from WebSocket.
- */
+// Batch of incoming chat messages from WebSocket.
 type IncomingChatMsgList = {
     type: 'ChatMsgList';
     messages: IncomingChatMsg[];
 };
 
-/**
- * Buffer state for streaming agent responses.
- */
+// Buffer state for streaming agent responses.
 type AgentBufferItem = {
     text: string;
     shownLength: number;
     timerId: number | null;
 };
 
-/** Row height in pixels for question slider. */
+// Row height in pixels for question slider.
 const ROW_HEIGHT = 50;
-/** Number of visible rows in question slider. */
+// Number of visible rows in question slider.
 const VISIBLE_ROWS = 3;
 
-/** Animation constants for auto-send timing. */
+// Animation constants for auto-send timing.
 const INTERVAL_FAST_MS = 2500;
 const INTERVAL_SLOW_MS = 8000;
 const STREAM_SILENCE_MS = 3500;
 
 /**
  * Generates a random ID string for messages.
- * @param len Length of the ID (default: 20)
+ * @param len Length of the ID (default 20)
  * @returns Random alphanumeric string
  */
 function genId(len = 20): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let res = '';
     for (let i = 0; i < len; i++) {
         res += chars[Math.floor(Math.random() * chars.length)];
@@ -74,22 +65,13 @@ function genId(len = 20): string {
 
 /**
  * Main chat interface component with question slider and WebSocket messaging.
- * 
+ *
  * Features:
  * - Real-time chat with streaming agent responses
  * - Question slider with auto-send functionality
  * - Speed toggle (Fast 2.5s / Slow 8s intervals)
  * - WebSocket connection with reconnection logic
  * - Backend config loading (token/agentId)
- * 
- * @example
- * ```
- * import MainContent from './MainContent';
- * 
- * function App() {
- *   return <MainContent />;
- * }
- * ```
  */
 export default function MainContent() {
     // --- Core State ---
@@ -126,11 +108,11 @@ export default function MainContent() {
         try {
             const cfg = (await (AppAPI as any).GetConfig()) as AppConfig;
             if (cfg && cfg.token && cfg.agentId) {
-                console.log("Config loaded successfully");
+                console.log('Config loaded successfully');
                 setConfig(cfg);
             }
         } catch (e) {
-            console.error("Failed to load config:", e);
+            console.error('Failed to load config:', e);
         }
     };
 
@@ -143,6 +125,9 @@ export default function MainContent() {
             if (Array.isArray(qs) && qs.length > 0) {
                 setQuestions(qs);
                 setQuestionsLoaded(true);
+                // Fix: Reset slider to beginning
+                autoIndexRef.current = 0;
+                setCurrentIndex(0);
             } else {
                 setQuestions([]);
                 setQuestionsLoaded(false);
@@ -188,7 +173,10 @@ export default function MainContent() {
         if (item.timerId !== null) clearTimeout(item.timerId);
         map.delete(id);
         if (!finalText) return;
-        setMessages((prev) => [...prev, { id, text: finalText, sender: 'Agent' }]);
+        setMessages((prev) => [
+            ...prev,
+            { id, text: finalText, sender: 'Agent' },
+        ]);
     };
 
     /**
@@ -199,7 +187,10 @@ export default function MainContent() {
         const item = map.get(id);
         if (!item) return;
         if (item.timerId !== null) clearTimeout(item.timerId);
-        const timerId = window.setTimeout(() => flushAgentById(id), STREAM_SILENCE_MS);
+        const timerId = window.setTimeout(
+            () => flushAgentById(id),
+            STREAM_SILENCE_MS
+        );
         item.timerId = timerId;
         map.set(id, item);
     };
@@ -207,17 +198,73 @@ export default function MainContent() {
     // --- WebSocket Logic ---
 
     /**
+     * Handles incoming WebSocket messages.
+     */
+    const handleIncomingChatMsg = (msg: IncomingChatMsg) => {
+        if (msg.sender !== 'Agent') return;
+        const id = msg.id || genId();
+        const full = msg.text ?? '';
+        if (!full) return;
+
+        const map = agentBuffersRef.current;
+        const existing =
+            map.get(id) ||
+            ({
+                text: '',
+                shownLength: 0,
+                timerId: null,
+            } as AgentBufferItem);
+
+        const prevLen = existing.text.length;
+        const part = full.slice(prevLen);
+
+        if (!part) {
+            scheduleFlushAgentById(id);
+            return;
+        }
+
+        const newText = existing.text + part;
+        const updated: AgentBufferItem = {
+            text: newText,
+            shownLength: newText.length,
+            timerId: existing.timerId,
+        };
+        map.set(id, updated);
+        scheduleFlushAgentById(id);
+    };
+
+    /**
      * Attaches event handlers to WebSocket instance.
      */
     const attachSocketHandlers = (socket: WebSocket) => {
-        socket.onopen = () => setConnected(true);
-        socket.onerror = () => setConnected(false);
-        socket.onclose = () => setConnected(false);
+        socket.onopen = () => {
+            setConnected(true);
+            pendingOpenRef.current = null;
+        };
+        socket.onerror = () => {
+            setConnected(false);
+        };
+        socket.onclose = () => {
+            setConnected(false);
+            pendingOpenRef.current = null;
+        };
         socket.onmessage = (event) => {
             try {
-                const raw = JSON.parse(event.data.toString()) as IncomingChatMsg | IncomingChatMsgList;
-                if (raw.type === 'ChatMsg') handleIncomingChatMsg(raw);
-            } catch { /* ignore */ }
+                const raw = JSON.parse(event.data.toString()) as
+                    | IncomingChatMsg
+                    | IncomingChatMsgList;
+
+                if (raw.type === 'ChatMsg') {
+                    handleIncomingChatMsg(raw);
+                }
+
+                if (raw.type === 'ChatMsgList' && Array.isArray(raw.messages)) {
+                    const last = raw.messages[raw.messages.length - 1];
+                    if (last) handleIncomingChatMsg(last);
+                }
+            } catch {
+                // ignore
+            }
         };
     };
 
@@ -238,104 +285,102 @@ export default function MainContent() {
      */
     const ensureSocketOpen = async (): Promise<WebSocket | null> => {
         if (!config) return null;
-        if (ws && ws.readyState === WebSocket.OPEN) return ws;
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            return ws;
+        }
+
         if (pendingOpenRef.current) {
             try {
                 const existing = await pendingOpenRef.current;
-                return existing.readyState === WebSocket.OPEN ? existing : null;
-            } catch { return null; }
+                if (existing.readyState === WebSocket.OPEN) return existing;
+                pendingOpenRef.current = null;
+            } catch {
+                pendingOpenRef.current = null;
+            }
         }
 
         const openPromise = new Promise<WebSocket>((resolve, reject) => {
             try {
                 const fullUrl = `${WS_BASE_URL}?agentId=${config.agentId}&token=${config.token}`;
                 const socket = new WebSocket(fullUrl);
+
                 socket.onopen = () => {
                     setConnected(true);
-                    attachSocketHandlers(socket);
-                    setWs(socket);
                     resolve(socket);
                 };
-                socket.onerror = (ev) => {
-                    socket.close();
-                    reject(ev);
+                socket.onerror = (err) => {
+                    setConnected(false);
+                    reject(err);
                 };
-                socket.onclose = () => setConnected(false);
-            } catch (e) { reject(e); }
+                socket.onclose = () => {
+                    setConnected(false);
+                };
+                socket.onmessage = (event) => {
+                    try {
+                        const raw = JSON.parse(event.data.toString()) as
+                            | IncomingChatMsg
+                            | IncomingChatMsgList;
+                        if (raw.type === 'ChatMsg') {
+                            handleIncomingChatMsg(raw);
+                        }
+                        if (
+                            raw.type === 'ChatMsgList' &&
+                            Array.isArray(raw.messages)
+                        ) {
+                            const last = raw.messages[raw.messages.length - 1];
+                            if (last) handleIncomingChatMsg(last);
+                        }
+                    } catch {
+                        // ignore
+                    }
+                };
+                setWs(socket);
+            } catch (e) {
+                reject(e);
+            }
         });
 
         pendingOpenRef.current = openPromise;
-        try { return await openPromise; } 
-        catch { return null; } 
-        finally { pendingOpenRef.current = null; }
+        return openPromise.catch(() => null);
     };
 
     /**
-     * Handles incoming agent streaming messages.
-     * Updates buffer and schedules flush on silence.
+     * Reconnects WebSocket and clears buffers.
      */
-    const handleIncomingChatMsg = (msg: IncomingChatMsg) => {
-        if (msg.sender !== 'Agent') return;
-        const id = msg.id || genId();
-        const full = msg.text ?? '';
-        if (!full) return;
-
-        const map = agentBuffersRef.current;
-        const existing = map.get(id) || { text: '', shownLength: 0, timerId: null } as AgentBufferItem;
-        const prevLen = existing.text.length;
-        const part = full.slice(prevLen);
-        if (!part) {
-            scheduleFlushAgentById(id);
-            return;
-        }
-        const newText = existing.text + part;
-        map.set(id, { text: newText, shownLength: newText.length, timerId: existing.timerId });
-        scheduleFlushAgentById(id);
-    };
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            ws?.close();
-            agentBuffersRef.current.forEach((item) => {
-                if (item.timerId !== null) clearTimeout(item.timerId);
-            });
-            agentBuffersRef.current.clear();
-            stopAutoSend();
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    // --- Button Handlers ---
-
-    /** Reloads questions from backend and stops auto-send. */
-    const handleReloadQuestions = async () => {
-        stopAutoSend();
-        await loadQuestions();
-    };
-
-    /** Reconnects WebSocket and clears buffers. */
     const handleReconnect = () => {
         if (!config) return;
         if (ws) {
-            try { ws.close(); } catch {}
+            try {
+                ws.close();
+            } catch {
+                // ignore
+            }
         }
         setWs(null);
         setConnected(false);
+
         agentBuffersRef.current.forEach((item) => {
             if (item.timerId !== null) clearTimeout(item.timerId);
         });
         agentBuffersRef.current.clear();
+
         createSocket();
     };
-    
-    /** Reloads config and reconnects. */
+
+    /**
+     * Reloads config and reconnects.
+     */
     const handleUpdateConfig = async () => {
         stopAutoSend();
         setConnected(false);
-        if (ws) { ws.close(); setWs(null); }
+        if (ws) ws.close();
+        setWs(null);
         await loadConfig();
-        if (config) setTimeout(() => handleReconnect(), 100);
+        // Allow state to update then reconnect
+        if (config) {
+            setTimeout(handleReconnect, 100);
+        }
     };
 
     // --- Message Sending ---
@@ -345,6 +390,7 @@ export default function MainContent() {
      */
     const sendMessage = async (text: string) => {
         if (!text.trim()) return;
+
         const socket = await ensureSocketOpen();
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
 
@@ -355,14 +401,25 @@ export default function MainContent() {
             text: trimmed,
             sender: 'User' as const,
             createdAts: Math.floor(Date.now() / 1000),
-            url: null, b64Data: null, skill: null, messageType: 'text', audioEnabled: false, files: [] as any, isBuffer: false,
+            url: null,
+            b64Data: null,
+            skill: null,
+            messageType: 'text',
+            audioEnabled: false,
+            files: [] as any,
+            isBuffer: false,
         };
 
         socket.send(JSON.stringify(msg));
-        setMessages((prev) => [...prev, { id: msg.id, text: trimmed, sender: 'User' }]);
+        setMessages((prev) => [
+            ...prev,
+            { id: msg.id, text: trimmed, sender: 'User' },
+        ]);
     };
 
-    /** Handles form submission for manual messages. */
+    /**
+     * Handles form submission for manual messages.
+     */
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim()) return;
@@ -371,16 +428,15 @@ export default function MainContent() {
         stopAutoSend();
     };
 
-    // --- Slider & Auto-send Logic ---
+    // --- Slider Logic ---
 
-    /** Gets question at index or empty string if out of bounds. */
     const getItemOrEmpty = (index: number): string => {
         if (index < 0 || index >= questions.length) return '';
         return questions[index];
     };
 
     /**
-     * Animates slider to new index with smooth transition.
+     * Animates slider to next index with "anti-blink" logic.
      */
     const animateToIndex = (nextIndex: number, cb: () => void) => {
         const track = sliderRef.current;
@@ -389,20 +445,27 @@ export default function MainContent() {
             cb();
             return;
         }
+
         if (isSliding) return;
-
         setIsSliding(true);
-        setCurrentIndex(nextIndex);
 
+        // Reset to 0 with no transition
         track.style.transition = 'none';
-        track.style.transform = `translateY(${ROW_HEIGHT}px)`;
+        track.style.transform = 'translateY(0px)';
         void track.offsetHeight;
 
-        requestAnimationFrame(() => {
-            track.style.transition = 'transform 0.5s ease';
-            track.style.transform = 'translateY(0px)';
-            const handleEnd = () => {
-                track.removeEventListener('transitionend', handleEnd);
+        // Animate to -ROW_HEIGHT
+        track.style.transition = 'transform 0.5s ease';
+        track.style.transform = `translateY(-${ROW_HEIGHT}px)`;
+
+        const handleEnd = () => {
+            track.removeEventListener('transitionend', handleEnd);
+
+            requestAnimationFrame(() => {
+                // Update state
+                setCurrentIndex(nextIndex);
+
+                // Reset transform without transition
                 requestAnimationFrame(() => {
                     track.style.transition = 'none';
                     track.style.transform = 'translateY(0px)';
@@ -410,12 +473,12 @@ export default function MainContent() {
                     setIsSliding(false);
                     cb();
                 });
-            };
-            track.addEventListener('transitionend', handleEnd, { once: true });
-        });
+            });
+        };
+
+        track.addEventListener('transitionend', handleEnd, { once: true });
     };
 
-    /** Stops auto-send timer and resets state. */
     const stopAutoSend = () => {
         if (autoTimerRef.current !== null) {
             clearInterval(autoTimerRef.current);
@@ -424,7 +487,6 @@ export default function MainContent() {
         setAutoRunning(false);
     };
 
-    /** Sends question at specific index. */
     const sendQuestionByIndex = async (index: number) => {
         if (index < 0 || index >= questions.length) return;
         const q = questions[index];
@@ -436,13 +498,15 @@ export default function MainContent() {
      * Runs auto-send timer loop with specified delay.
      */
     const runTimerLoop = (delay: number) => {
-        if (autoTimerRef.current !== null) clearInterval(autoTimerRef.current);
-
+        if (autoTimerRef.current !== null) {
+            clearInterval(autoTimerRef.current);
+        }
         autoTimerRef.current = window.setInterval(async () => {
             if (isSliding) return;
 
             const current = autoIndexRef.current;
             const next = current + 1;
+
             if (next >= questions.length) {
                 stopAutoSend();
                 return;
@@ -460,7 +524,6 @@ export default function MainContent() {
      */
     const startAutoSend = async () => {
         if (!questions.length) return;
-        
         if (autoRunning && autoTimerRef.current !== null) return;
 
         const socket = await ensureSocketOpen();
@@ -468,10 +531,10 @@ export default function MainContent() {
 
         setAutoRunning(true);
         autoIndexRef.current = currentIndex;
-        
         await sendQuestionByIndex(autoIndexRef.current);
 
-        const delay = sendSpeed === 'fast' ? INTERVAL_FAST_MS : INTERVAL_SLOW_MS;
+        const delay =
+            sendSpeed === 'fast' ? INTERVAL_FAST_MS : INTERVAL_SLOW_MS;
         runTimerLoop(delay);
     };
 
@@ -481,12 +544,23 @@ export default function MainContent() {
     const toggleSpeed = (mode: 'fast' | 'slow') => {
         setSendSpeed(mode);
         if (autoRunning) {
-            const newDelay = mode === 'fast' ? INTERVAL_FAST_MS : INTERVAL_SLOW_MS;
+            const newDelay =
+                mode === 'fast' ? INTERVAL_FAST_MS : INTERVAL_SLOW_MS;
             runTimerLoop(newDelay);
         }
     };
 
-    /** Loads current question into input field. */
+    /**
+     * Reloads questions from backend and resets slider.
+     */
+    const handleReloadQuestions = async () => {
+        stopAutoSend();
+        await loadQuestions();
+    };
+
+    /**
+     * Loads current question into input field.
+     */
     const handleCenterClick = () => {
         const q = getItemOrEmpty(currentIndex);
         if (!q) return;
@@ -498,153 +572,264 @@ export default function MainContent() {
     const nextIndex = currentIndex + 1;
 
     return (
-        <div className="flex-1 p-4 overflow-hidden bg-primary text-afafaf flex gap-4">
-            {/* Question Slider - Left Panel */}
-            <div className="w-[260px] bg-primary flex flex-col items-center justify-center">
-                <div className="relative w-full mb-3">
+        <div className='flex-1 p-4 overflow-hidden bg-primary text-[#afafaf] flex gap-4'>
+            {/* Left Panel - Questions Slider */}
+            <div className='w-[260px] bg-primary flex flex-col items-center justify-center'>
+                <div className='relative w-full mb-3'>
                     <div
                         style={{
                             height: ROW_HEIGHT * VISIBLE_ROWS,
                             overflow: 'hidden',
                             position: 'relative',
-                            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,1) 33%, rgba(0,0,0,1) 66%, transparent 100%)',
-                            maskImage: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,1) 33%, rgba(0,0,0,1) 66%, transparent 100%)',
+                            WebkitMaskImage:
+                                'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,1) 33%, rgba(0,0,0,1) 66%, transparent 100%)',
+                            maskImage:
+                                'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,1) 33%, rgba(0,0,0,1) 66%, transparent 100%)',
                         }}
                     >
-                        <div ref={sliderRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: 'translateY(0px)' }}>
-                            <div style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 16px', color: '#afafaf' }}>
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 }}>{getItemOrEmpty(prevIndex)}</span>
+                        <div
+                            ref={sliderRef}
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transition: 'transform 0.5s ease',
+                            }}
+                        >
+                            {/* prev */}
+                            <div
+                                style={{
+                                    height: ROW_HEIGHT,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-start',
+                                    padding: '0 16px',
+                                    color: '#afafaf',
+                                }}
+                            >
+                                <span
+                                    style={{
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        minWidth: 0,
+                                        flex: 1,
+                                    }}
+                                >
+                                    {getItemOrEmpty(prevIndex)}
+                                </span>
                             </div>
-                            <div onClick={handleCenterClick} style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 16px', color: '#afafaf', fontWeight: 600, cursor: 'pointer' }}>
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 }}>{getItemOrEmpty(currentIndex)}</span>
+
+                            {/* current */}
+                            <div
+                                onClick={handleCenterClick}
+                                style={{
+                                    height: ROW_HEIGHT,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-start',
+                                    padding: '0 16px',
+                                    color: '#afafaf',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <span
+                                    style={{
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        minWidth: 0,
+                                        flex: 1,
+                                    }}
+                                >
+                                    {getItemOrEmpty(currentIndex)}
+                                </span>
                             </div>
-                            <div style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 16px', color: '#afafaf' }}>
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 }}>{getItemOrEmpty(nextIndex)}</span>
+
+                            {/* next */}
+                            <div
+                                style={{
+                                    height: ROW_HEIGHT,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-start',
+                                    padding: '0 16px',
+                                    color: '#afafaf',
+                                }}
+                            >
+                                <span
+                                    style={{
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        minWidth: 0,
+                                        flex: 1,
+                                    }}
+                                >
+                                    {getItemOrEmpty(nextIndex)}
+                                </span>
                             </div>
                         </div>
-                        <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', height: ROW_HEIGHT, width: '100%', border: '1px solid #afafaf', borderRadius: 10, pointerEvents: 'none', boxSizing: 'border-box' }} />
+
+                        <div
+                            style={{
+                                position: 'absolute',
+                                left: 0,
+                                top: '50%',
+                                transform: 'translateY(-50%)',
+                                height: ROW_HEIGHT,
+                                width: '100%',
+                                border: '1px solid #afafaf',
+                                borderRadius: 10,
+                                pointerEvents: 'none',
+                                boxSizing: 'border-box',
+                            }}
+                        />
                     </div>
                 </div>
 
                 {/* Speed Toggle Controls */}
-                <div className="w-full flex bg-[#222] rounded-md p-1 mb-2">
+                <div className='w-full flex bg-[#222] rounded-md p-1 mb-2'>
                     <button
                         onClick={() => toggleSpeed('fast')}
                         className={`flex-1 text-[10px] py-1 rounded-sm transition-colors ${
-                            sendSpeed === 'fast' 
-                            ? 'bg-[#444] text-white font-bold shadow-sm' 
-                            : 'text-[#666] hover:text-[#999]'
+                            sendSpeed === 'fast'
+                                ? 'bg-[#444] text-white font-bold shadow-sm'
+                                : 'text-[#666] hover:text-[#999]'
                         }`}
-                        aria-label="Fast mode (2.5s interval)"
+                        aria-label='Fast mode (2.5s interval)'
                     >
                         Fast (2.5s)
                     </button>
                     <button
                         onClick={() => toggleSpeed('slow')}
                         className={`flex-1 text-[10px] py-1 rounded-sm transition-colors ${
-                            sendSpeed === 'slow' 
-                            ? 'bg-[#444] text-white font-bold shadow-sm' 
-                            : 'text-[#666] hover:text-[#999]'
+                            sendSpeed === 'slow'
+                                ? 'bg-[#444] text-white font-bold shadow-sm'
+                                : 'text-[#666] hover:text-[#999]'
                         }`}
-                        aria-label="Slow mode (8s interval)"
+                        aria-label='Slow mode (8s interval)'
                     >
                         Slow (8s)
                     </button>
                 </div>
 
                 {/* Control Buttons */}
-                <div className="flex gap-2 text-xs w-full justify-between">
+                <div className='flex gap-2 text-xs w-full justify-between'>
                     <button
-                        type="button"
-                        className="flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]"
+                        type='button'
+                        className='flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]'
                         onClick={startAutoSend}
                         disabled={!questionsLoaded || autoRunning}
-                        aria-label="Start auto-send loop"
+                        aria-label='Start auto-send loop'
                     >
                         Start
                     </button>
                     <button
-                        type="button"
-                        className="flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]"
+                        type='button'
+                        className='flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]'
                         onClick={stopAutoSend}
                         disabled={!autoRunning}
-                        aria-label="Stop auto-send loop"
+                        aria-label='Stop auto-send loop'
                     >
                         Stop
                     </button>
                     <button
-                        type="button"
-                        className="flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]"
+                        type='button'
+                        className='flex-1 py-1 border border-[#444] rounded-md hover:bg-[#222]'
                         onClick={handleReloadQuestions}
-                        aria-label="Reload questions from backend"
+                        aria-label='Reload questions from backend'
                     >
                         Reload
                     </button>
                 </div>
 
                 {!questionsLoaded && (
-                    <div className="mt-2 text-[11px] text-neutral-500">
+                    <div className='mt-2 text-[11px] text-neutral-500'>
                         Couldn&apos;t load questions.json
                     </div>
                 )}
             </div>
 
             {/* Chat Panel - Right Side */}
-            <div className="flex-1 flex flex-col border border-[#242426] rounded-lg overflow-hidden">
+            <div className='flex-1 flex flex-col border border-[#242426] rounded-lg overflow-hidden'>
                 {/* Chat Header */}
-                <div className="px-3 py-2 border-b border-[#242426] flex items-center justify-between text-sm">
-                    <span className="font-unbounded">Chatting</span>
-                    <div className="flex items-center gap-3">
-                        <button 
-                            onClick={handleUpdateConfig} 
-                            className="px-2 py-1 text-xs border border-[#444] rounded-md hover:bg-[#222] text-[#9f9f9f]" 
-                            title="Reload config.json & Reconnect"
-                            aria-label="Update configuration"
+                <div className='px-3 py-2 border-b border-[#242426] flex items-center justify-between text-sm'>
+                    <span className='font-unbounded'>Chatting</span>
+                    <div className='flex items-center gap-3'>
+                        <button
+                            onClick={handleUpdateConfig}
+                            className='px-2 py-1 text-xs border border-[#444] rounded-md hover:bg-[#222] text-[#9f9f9f]'
+                            title='Reload config.json & Reconnect'
+                            aria-label='Update configuration'
                         >
                             Update config
                         </button>
-                        <div className="h-4 w-[1px] bg-[#333]" />
-                        <span className={connected ? 'text-green-400' : 'text-red-400'}>
+                        <div className='h-4 w-[1px] bg-[#333]' />
+                        <span
+                            className={
+                                connected ? 'text-green-400' : 'text-red-400'
+                            }
+                        >
                             {connected ? 'online' : 'offline'}
                         </span>
-                        <button 
-                            onClick={handleReconnect} 
-                            title="Reconnect Socket" 
-                            className="h-[28px] w-[28px] flex items-center justify-center text-[#9f9f9f] rounded-md hover:text-secondary hover:bg-[#222]"
-                            aria-label="Reconnect WebSocket"
+                        <button
+                            onClick={handleReconnect}
+                            title='Reconnect Socket'
+                            className='h-[28px] w-[28px] flex items-center justify-center text-[#9f9f9f] rounded-md hover:text-secondary hover:bg-[#222]'
+                            aria-label='Reconnect WebSocket'
                         >
-                            <span className="rotate-icon text-xl">↻</span>
+                            <span className='rotate-icon text-xl'>↻</span>
                         </button>
                     </div>
                 </div>
 
                 {/* Messages Container */}
-                <div ref={messagesContainerRef} className="flex-1 overflow-auto p-3 bg-primary space-y-2 text-sm scroll-thin">
+                <div
+                    ref={messagesContainerRef}
+                    className='flex-1 overflow-auto p-3 bg-primary space-y-2 text-sm scroll-thin'
+                >
                     {messages.map((m) => (
-                        <div key={m.id} className={`max-w-[80%] rounded-lg px-3 py-2 ${m.sender === 'User' ? 'ml-auto bg-[#333]' : 'mr-auto bg-[#222222]'}`}>
-                            <div className="text-[10px] opacity-60 mb-1">{m.sender === 'User' ? 'You' : 'Mio'}</div>
+                        <div
+                            key={m.id}
+                            className={`max-w-[80%] rounded-lg px-3 py-2 ${
+                                m.sender === 'User'
+                                    ? 'ml-auto bg-[#333]'
+                                    : 'mr-auto bg-[#222222]'
+                            }`}
+                        >
+                            <div className='text-[10px] opacity-60 mb-1'>
+                                {m.sender === 'User' ? 'You' : 'Mio'}
+                            </div>
                             <div>{m.text}</div>
                         </div>
                     ))}
                     {messages.length === 0 && (
-                        <div className="text-xs text-neutral-500">use how u like.</div>
+                        <div className='text-xs text-neutral-500'>
+                            use how u like.
+                        </div>
                     )}
                 </div>
 
                 {/* Input Form */}
-                <form onSubmit={handleSubmit} className="border-t border-primary p-2 flex gap-2">
-                    <input 
-                        className="flex-1 bg-[#101010] text-sm px-3 py-2 rounded-md outline-none border border-[#222] focus:border-[#333] input-placeholder-dark" 
-                        placeholder="type here..." 
-                        value={input} 
+                <form
+                    onSubmit={handleSubmit}
+                    className='border-t border-primary p-2 flex gap-2'
+                >
+                    <input
+                        className='flex-1 bg-[#101010] text-sm px-3 py-2 rounded-md outline-none border border-[#222] focus:border-[#333] input-placeholder-dark'
+                        placeholder='type here...'
+                        value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        aria-label="Chat input"
+                        aria-label='Chat input'
                     />
-                    <button 
-                        type="submit" 
-                        className="px-4 py-2 text-sm rounded-md hover:bg-[#222]" 
+                    <button
+                        type='submit'
+                        className='px-4 py-2 text-sm rounded-md hover:bg-[#222]'
                         disabled={!input.trim()}
-                        aria-label="Send message"
+                        aria-label='Send message'
                     >
                         Send
                     </button>
